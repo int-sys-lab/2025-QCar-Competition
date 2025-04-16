@@ -49,8 +49,10 @@ K_i = 0
 # - nodeSequence: list of nodes from roadmap. Used for trajectory generation.
 enableSteeringControl = True
 K_stanley = .5
-nodeSequence = [10, 2, 4, 14, 20, 22, 11, 2, 13, 14, 20, 22, 10]
-#nodeSequence needs work
+# ---- Path Options ----
+# To Pick Up and Drop Off Passenger and Return
+nodeSequence = [10, 2, 4, 14, 20, 22, 9, 7, 14, 20, 22, 10]
+# To go around track
 #nodeSequence = [10, 2, 4, 14, 20, 22, 10]
 
 
