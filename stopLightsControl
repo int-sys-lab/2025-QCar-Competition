@@ -171,13 +171,19 @@ class SteeringController:
         ect = np.linalg.norm(ct) * np.sign(dir)
         ect += lane_bias
 
+        # Clamp very low speeds to avoid division issues
+        safe_speed = max(speed, 0.3)
+
+        # During first moments (spawn), ignore cross-track error
+        if self.wpi == 0 and np.linalg.norm(p - wp_1) < 0.5:
+            ect = 0
+
+        steering = wrap_to_pi(psi + np.arctan2(self.k * ect, safe_speed))
+
         self.p_ref = ep
         self.th_ref = tangent
 
-        return np.clip(
-            wrap_to_pi(psi + np.arctan2(self.k*ect, max(speed, 0.3))),
-            -self.maxSteeringAngle,
-            self.maxSteeringAngle)
+        return np.clip(steering, -self.maxSteeringAngle, self.maxSteeringAngle)
         
         return 0
 #------------------------Main Control Loop Function---------------------------------
