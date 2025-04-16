@@ -27,6 +27,7 @@ from hal.utilities.image_processing import ImageProcessing
 from pal.utilities.vision import Camera3D
 
 
+
 # -------------------------------- Time Parameters -----------------------------------------
 # - tf: experiment duration in seconds.
 # - startDelay: delay to give filters time to settle in seconds.
@@ -124,6 +125,8 @@ class SteeringController:
 
         self.p_ref = (0, 0)
         self.th_ref = 0
+
+        self.bias_cooldown_counter = 0
  
     def update(self, p, th, speed):
         wp_1 = self.wp[:, np.mod(self.wpi, self.N-1)]
@@ -148,14 +151,31 @@ class SteeringController:
         ct = ep - p
         dir = wrap_to_pi(np.arctan2(ct[1], ct[0]) - tangent)
 
-        ect = np.linalg.norm(ct) * np.sign(dir)
+
+        # Calculate heading error to see if we're turning
         psi = wrap_to_pi(tangent-th)
+
+        # Bias logic
+        bias_strength = max(0.0, 1.0 - abs(psi) / (np.pi / 4))
+
+        # Trigger cooldown if we're turning
+        if abs(psi) > 0.2:
+            self.bias_cooldown_counter = 30  # hold off bias for 20 frames
+
+        # Decrease cooldown if active
+        if self.bias_cooldown_counter > 0:
+            self.bias_cooldown_counter -= 1
+            bias_strength = 0  # suppress bias during cooldown
+
+        lane_bias = 0.05 * bias_strength
+        ect = np.linalg.norm(ct) * np.sign(dir)
+        ect += lane_bias
 
         self.p_ref = ep
         self.th_ref = tangent
 
         return np.clip(
-            wrap_to_pi(psi + np.arctan2(self.k*ect, speed + 0.001)),
+            wrap_to_pi(psi + np.arctan2(self.k*ect, max(speed, 0.3))),
             -self.maxSteeringAngle,
             self.maxSteeringAngle)
         
@@ -283,6 +303,17 @@ def controlLoop():
                 delta = 0
             else:
                 #region : Speed controller update
+                #Passenger Pick Up
+                if p[0] < 0.13 and p[0] > 0.12 and p[1] < 4.6 and p[1] > 4.5:
+                    if carStopped == False:
+                        u = 0
+                        timerStart = time.time()
+                        carStopped = True
+                    #When timer reaches 3 seconds, continue
+                    else:
+                        timerEnd = time.time()
+                        if (timerEnd - timerStart) >= 3:
+                            u = speedController.update(v, v_ref, dt)
                 #Stop Sign 1----------------------------------------------------------
                 if p[0] < 2.5 and p[0] > 1.75 and p[1] < 0.15 and p[1] > -.2:
                     #When car first enters box, stop car and start timer
