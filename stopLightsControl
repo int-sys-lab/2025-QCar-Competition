@@ -49,7 +49,7 @@ K_i = 0
 # - K_stanley: K gain for stanley controller
 # - nodeSequence: list of nodes from roadmap. Used for trajectory generation.
 enableSteeringControl = True
-K_stanley = .5
+K_stanley = .2
 # ---- Path Options ----
 # To Pick Up and Drop Off Passenger and Return
 nodeSequence = [10, 2, 4, 14, 20, 22, 9, 7, 14, 20, 22, 10]
