@@ -222,12 +222,22 @@ def controlLoop():
     cameraInterfacingLab.d435DistParam = distortionCoefficients
     #----------------------"Global" Variables-----------------------
     timerStart = 0
+    stop7TimerStart = 0
+    stop7TimerStarted = False
+    stop8TimerStart = 0
+    stop8TimerStarted = False
     carStopped = False
     carStopped2 = False
     carStopped3 = False
     carStopped4 = False
+    carStopped5 = False
+    carStopped6 = False
+    carStopped7 = False
+    carStopped8 = False
     StopLight = False
     StopLight2 = False
+    StopLight3 = False
+    StopLight4 = False
     imageWidth = 1280
     imageHeight = 720
     stopLight = True
@@ -309,17 +319,38 @@ def controlLoop():
                 delta = 0
             else:
                 #region : Speed controller update
-                #Passenger Pick Up
-                if p[0] < 0.13 and p[0] > 0.12 and p[1] < 4.6 and p[1] > 4.5:
-                    if carStopped == False:
+                # One-time stop at passenger pick up for 3 seconds
+                if not carStopped7 and abs(p[0] - 0.125) < 0.7 and abs(p[1] - 4.395) < 0.3:
+                    if not stop7TimerStarted:
+                        print("Picking up passenger")
                         u = 0
-                        timerStart = time.time()
-                        carStopped = True
-                    #When timer reaches 3 seconds, continue
+                        delta = 0
+                        stop7TimerStart = time.time()
+                        stop7TimerStarted = True
+                    elif (time.time() - stop7TimerStart) < 3:
+                        u = 0
+                        delta = 0
                     else:
-                        timerEnd = time.time()
-                        if (timerEnd - timerStart) >= 3:
-                            u = speedController.update(v, v_ref, dt)
+                        carStopped7 = True  # Don't stop again
+
+                    qcar.write(u, delta)
+                    continue  # Skip the rest of the loop this frame
+                # One-time stop at passenger drop off for 3 seconds
+                if not carStopped8 and abs(p[0] - (-0.905)) < 0.2 and abs(p[1] - 0.8) < 0.3:
+                    if not stop8TimerStarted:
+                        print("Dropping off passenger")
+                        u = 0
+                        delta = 0
+                        stop8TimerStart = time.time()
+                        stop8TimerStarted = True
+                    elif (time.time() - stop8TimerStart) < 3:
+                        u = 0
+                        delta = 0
+                    else:
+                        carStopped8 = True  # Don't stop again
+
+                    qcar.write(u, delta)
+                    continue  # Skip the rest of the loop this frame
                 #Stop Sign 1----------------------------------------------------------
                 if p[0] < 2.5 and p[0] > 1.75 and p[1] < 0.15 and p[1] > -.2:
                     #When car first enters box, stop car and start timer
@@ -446,7 +477,7 @@ def controlLoop():
                             image = cameraInterfacingLab.d435Color.imageBufferRGB
                             #--------------------Image Processing------------------------
                             hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-                            carStopped3 = True
+                            carStopped5 = True
                             # lower range of green stoplight color in HSV
                             hsv_green_lower = (50, 160, 200)
                             # upper range of green stoplight color in HSV
@@ -461,7 +492,7 @@ def controlLoop():
                             #If the average pixel value is above 0.001,
                             #stoplight must be green
                             if np.average(color_image) >= 0.001: 
-                                carStopped3 = False
+                                carStopped5 = False
                                 print("Light is green go!")
                                 StopLight = True
                                 u = speedController.update(v, v_ref, dt)
@@ -488,7 +519,7 @@ def controlLoop():
                             image = cameraInterfacingLab.d435Color.imageBufferRGB
                             #--------------------Image Processing------------------------
                             hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-                            carStopped3 = True
+                            carStopped6 = True
                             # lower range of green stoplight color in HSV
                             hsv_green_lower = (50, 160, 200)
                             # upper range of green stoplight color in HSV
@@ -503,7 +534,7 @@ def controlLoop():
                             #If the average pixel value is above 0.001,
                             #stoplight must be green
                             if np.average(color_image) >= 0.001: 
-                                carStopped3 = False
+                                carStopped6 = False
                                 print("Light is green go!")
                                 StopLight = True
                                 u = speedController.update(v, v_ref, dt)
@@ -518,8 +549,14 @@ def controlLoop():
                     u = speedController.update(v, v_ref, dt)
                     StopLight = False
                     StopLight2 = False
-                    carStopped2 =False
-                    carStopped = False
+                    StopLight3 = False
+                    StopLight4 = False
+                    carStopped =False
+                    carStopped2 = False
+                    carStopped3 = False
+                    carStopped4 = False
+                    carStopped5 = False
+                    carStopped6 = False
                     counter2 = 0
                     counter3 = 0
 
