@@ -222,6 +222,7 @@ def controlLoop():
     cameraInterfacingLab.d435DistParam = distortionCoefficients
     #----------------------"Global" Variables-----------------------
     timerStart = 0
+    timerStart2 = 0
     stop7TimerStart = 0
     stop7TimerStarted = False
     stop8TimerStart = 0
@@ -352,7 +353,7 @@ def controlLoop():
                     qcar.write(u, delta)
                     continue  # Skip the rest of the loop this frame
                 #Stop Sign 1----------------------------------------------------------
-                if p[0] < 2.5 and p[0] > 1.75 and p[1] < 0.15 and p[1] > -.2:
+                if p[0] < 3.5 and p[0] > 2.11 and p[1] < 0.15 and p[1] > -.2:
                     #When car first enters box, stop car and start timer
                     if carStopped == False:
                         u = 0
@@ -364,19 +365,19 @@ def controlLoop():
                         if (timerEnd - timerStart) >= 3:
                             u = speedController.update(v, v_ref, dt)
                 #Stop Sign 2-----------------------------------------------------------
-                elif p[0] < 1.84 and p[0] > 1.09 and p[1] < 1.7 and p[1] > 1.35:
+                elif p[0] < 2.1 and p[0] > 1.85 and p[1] < 2.1 and p[1] > 1.7:
                     #When car first enters box, stop car and start timer
                     if carStopped2 == False:
                         u = 0
-                        timerStart = time.time()
+                        timerStart2 = time.time()
                         carStopped2 = True
                     #When timer reaches 3 seconds, continue
                     else:
                         timerEnd = time.time()
-                        if (timerEnd - timerStart) >= 3:
+                        if (timerEnd - timerStart2) >= 3:
                             u = speedController.update(v, v_ref, dt)
                 #Stop Light 1---------------------------------------------------------
-                elif p[0] < -.625 and p[0] > -1.05 and p[1] < 1.1 and p[1] > 0.7:
+                elif p[0] < -0.6 and p[0] > -1. and p[1] < 1 and p[1] > 0.7: 
                     #False as long as car has first entered box and light is assumed to be red                    
                     if (StopLight == False):
                         #count every second (counter2 starts from 0)
@@ -395,9 +396,9 @@ def controlLoop():
                             hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
                             carStopped3 = True
                             # lower range of green stoplight color in HSV
-                            hsv_green_lower = (50, 160, 200)
+                            hsv_green_lower = (40, 50, 100)
                             # upper range of green stoplight color in HSV
-                            hsv_green_upper = (70, 255, 255)
+                            hsv_green_upper = (80, 255, 255)
                             #mask with the range of greens for stoplight color
                             mask = cv2.inRange(hsv_img, hsv_green_lower, hsv_green_upper)
                             #only show the pixels that contain the stoplight color
@@ -405,9 +406,8 @@ def controlLoop():
 
                             #print(np.average(color_image))
                             
-                            #If the average pixel value is above 0.001,
-                            #stoplight must be green
-                            if np.average(color_image) >= 0.001: 
+                            #If the average pixel value is above 0.07, stoplight must be green
+                            if np.average(color_image) >= 0.07: 
                                 carStopped3 = False
                                 print("Light is green go!")
                                 StopLight = True
@@ -418,7 +418,7 @@ def controlLoop():
                                 u = 0
                                 delta = 0
                 #Stop Light 2--------------------------------------------------
-                elif p[0] < -0.15 and p[0] > 0.13 and p[1] < 2.25 and p[1] > 1.7:
+                elif p[0] < 1.3 and p[0] > 0.9 and p[1] < 1.2  and p[1] > 0.95:
                     #False as long as car has first entered box and light is assumed to be red  
                     if (StopLight2 == False):
                         #count every second (counter2 starts from 0)
@@ -437,19 +437,19 @@ def controlLoop():
                             hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
                             carStopped4 = True
                             # lower range of green stoplight color in HSV
-                            hsv_green_lower = (50, 160, 200)
+                            hsv_green_lower = (40, 50, 100)
                             # upper range of green stoplight color in HSV
-                            hsv_green_upper = (70, 255, 255)
+                            hsv_green_upper = (80, 255, 255)
                             # mask with the range of greens for stoplight color
                             mask = cv2.inRange(hsv_img, hsv_green_lower, hsv_green_upper)
                             # only show the pixels that contain the stoplight color
                             color_image = cv2.bitwise_and(image, image, mask=mask)
 
-                            # print(np.average(color_image))
+                            #print(np.average(color_image))
                             
-                            #If the average pixel value is above 0.001,
-                            #stoplight must be green
-                            if np.average(color_image) > 0.001:
+                            #If the average pixel value is above 0.07, stoplight must be green
+                            green_pixels = np.count_nonzero(mask)
+                            if np.average(color_image) > 0.071:
                                 carStopped4 = False
                                 print("Light is green go!")
                                 StopLight2 = True
@@ -460,9 +460,9 @@ def controlLoop():
                                 u = 0
                                 delta = 0
                 #Stop Light 3---------------------------------------------------------
-                elif p[0] < 0.9 and p[0] > 1.33 and p[1] < 0.95 and p[1] > 1.2:
+                elif p[0] < 0.1 and p[0] > -0.1 and p[1] < 2.15 and p[1] > 1.75:
                     #False as long as car has first entered box and light is assumed to be red                    
-                    if (StopLight == False):
+                    if (StopLight3 == False):
                         #count every second (counter2 starts from 0)
                         second = counter2 % 60
                         #if it has been one second, isSecond is true
@@ -479,9 +479,9 @@ def controlLoop():
                             hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
                             carStopped5 = True
                             # lower range of green stoplight color in HSV
-                            hsv_green_lower = (50, 160, 200)
+                            hsv_green_lower = (40, 50, 100)
                             # upper range of green stoplight color in HSV
-                            hsv_green_upper = (70, 255, 255)
+                            hsv_green_upper = (80, 255, 255)
                             #mask with the range of greens for stoplight color
                             mask = cv2.inRange(hsv_img, hsv_green_lower, hsv_green_upper)
                             #only show the pixels that contain the stoplight color
@@ -489,9 +489,8 @@ def controlLoop():
 
                             #print(np.average(color_image))
                             
-                            #If the average pixel value is above 0.001,
-                            #stoplight must be green
-                            if np.average(color_image) >= 0.001: 
+                            #If the average pixel value is above 0.07, stoplight must be green
+                            if np.average(color_image) >= 0.06: 
                                 carStopped5 = False
                                 print("Light is green go!")
                                 StopLight = True
@@ -502,9 +501,9 @@ def controlLoop():
                                 u = 0
                                 delta = 0
                 #Stop Light 4---------------------------------------------------------
-                elif p[0] < 0.12 and p[0] > 0.4 and p[1] < 0.25 and p[1] > -0.2:
+                elif p[0] < 0.38 and p[0] > 0.1 and p[1] < 0.2 and p[1] > -0.2:
                     #False as long as car has first entered box and light is assumed to be red                    
-                    if (StopLight == False):
+                    if (StopLight4 == False):
                         #count every second (counter2 starts from 0)
                         second = counter2 % 60
                         #if it has been one second, isSecond is true
@@ -521,9 +520,9 @@ def controlLoop():
                             hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
                             carStopped6 = True
                             # lower range of green stoplight color in HSV
-                            hsv_green_lower = (50, 160, 200)
+                            hsv_green_lower = (40, 50, 100)
                             # upper range of green stoplight color in HSV
-                            hsv_green_upper = (70, 255, 255)
+                            hsv_green_upper = (80, 255, 255)
                             #mask with the range of greens for stoplight color
                             mask = cv2.inRange(hsv_img, hsv_green_lower, hsv_green_upper)
                             #only show the pixels that contain the stoplight color
@@ -531,9 +530,8 @@ def controlLoop():
 
                             #print(np.average(color_image))
                             
-                            #If the average pixel value is above 0.001,
-                            #stoplight must be green
-                            if np.average(color_image) >= 0.001: 
+                            #If the average pixel value is above 0.07, stoplight must be green
+                            if np.average(color_image) >= 0.06: 
                                 carStopped6 = False
                                 print("Light is green go!")
                                 StopLight = True
