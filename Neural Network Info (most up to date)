@@ -1,0 +1,43 @@
+Step 1: Download the pretrained Tensorflow model from the following Google Drive link and keep it in the " code " folder
+https://drive.google.com/file/d/12Y2dmPriDlKzzIugDJJ05tABp2itTuN0/view?usp=sharing
+
+Step 2: Work on the code
+  - I am modeling our neural network off of this teams: https://github.com/SoumyajitC-24/Quanser-2024-ACC-Competition/blob/main/code/main.py
+
+  -Here are the libraries that need to be imported
+
+#---------------Added imports for Tensorflow models-------
+
+from PIL import Image
+from model import TLClassifier, download_model, load_graph, select_boxes, crop_roi_image,TSClassifier
+import keras
+from keras import layers
+import tensorflow as tf
+import matplotlib.pyplot as plt
+
+#Intializing the Tensorflow Models for Traffic Sign & Traffic Light Detection
+tlc=TLClassifier() #For Traffic light detection
+
+tsc = TSClassifier()#For Traffic Sign detection
+
+# Initializing the Tensorflow Model for Traffic Light Classification
+base_model = keras.applications.Xception(
+    weights="imagenet",  # Load weights pre-trained on ImageNet.
+    input_shape=(150, 150, 3),
+    include_top=False,
+) 
+base_model.trainable = False
+inputs = keras.Input(shape=(150, 150, 3))
+scale_layer = keras.layers.Rescaling(scale=1 / 127.5, offset=-1)
+x = scale_layer(inputs)
+x = base_model(x, training=False)
+x = keras.layers.GlobalAveragePooling2D()(x)
+x = keras.layers.Dropout(0.2)(x)  # Regularize with dropout
+outputs = keras.layers.Dense(1)(x)
+model = keras.Model(inputs, outputs)
+base_model.trainable = True
+
+model_folder = os.path.dirname(__file__)
+
+model_path = os.path.join(model_folder, 'newModel.weights.h5')
+
