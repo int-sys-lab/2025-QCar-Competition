@@ -6,11 +6,58 @@ Step 2: Work on the code
 
   -Here are the libraries that need to be imported
 
+Notes: 
+
+-Keras can be used to:
+Load a prebuilt dataset.
+Build a neural network machine learning model that classifies images.
+Train this neural network.
+Evaluate the accuracy of the model.
+
+-import TensorFlow into the program to start
+
+Installing TensorFlow
+
+-https://www.tensorflow.org/install/pip
+
+You can install TensorFlow with Python's pip package manager:
+
+"# Requires the latest pip
+pip install --upgrade pip
+
+# Current stable release for CPU and GPU
+pip install tensorflow
+
+# Or try the preview build (unstable)
+pip install tf-nightly"
+
+-Install Additional Libraries:
+  If you are using TensorFlow Hub for pretrained models or need other libraries, you can install them with:
+"pip install tensorflow-hub
+pip install opencv-python
+pip install matplotlib"
+
+-Install Keras (although it's part of TensorFlow 2.x, you can ensure it's installed separately):
+
+Run this command:
+pip install keras
+
+Install Other Dependencies:
+You'll need OpenCV, Matplotlib, and Pandas (these are included in your main.py):
+pip install opencv-python matplotlib pandas
+
+-Step 2: Set Up Your TensorFlow Model (Traffic Light & Traffic Sign Detection)
+From your provided code, the neural network is already set up using TensorFlow and Keras.
+
+Here’s the relevant portion for setting up the Traffic Light Classifier (TLClassifier) and Traffic Sign Classifier (TSClassifier):
+
+The rest would be using the other teams code and modifying it to work with ours, here is just a portion of it
+
 #---------------Added imports for Tensorflow models-------
 
 from PIL import Image
 from model import TLClassifier, download_model, load_graph, select_boxes, crop_roi_image,TSClassifier
-import keras
+import keras 
 from keras import layers
 import tensorflow as tf
 import matplotlib.pyplot as plt
@@ -39,5 +86,5 @@ base_model.trainable = True
 
 model_folder = os.path.dirname(__file__)
 
-model_path = os.path.join(model_folder, 'newModel.weights.h5')a
+model_path = os.path.join(model_folder, 'newModel.weights.h5')
 
