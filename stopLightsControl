@@ -40,16 +40,18 @@ controllerUpdateRate = 150
 # - v_ref: desired velocity in m/s
 # - K_p: proportional gain for speed controller
 # - K_i: integral gain for speed controller
-v_ref = .75
+# - K_d: derivative gain for speed controller
+v_ref = 0.75
 K_p = 1
 K_i = 0
+K_d = 0.01
 
 # -------------------------- Steering Control Parameters ----------------------------------
 # - enableSteeringControl: whether or not to enable steering control
 # - K_stanley: K gain for stanley controller
 # - nodeSequence: list of nodes from roadmap. Used for trajectory generation.
 enableSteeringControl = True
-K_stanley = .2
+K_stanley = 1
 # ---- Path Options ----
 # To Pick Up and Drop Off Passenger and Return
 nodeSequence = [10, 2, 4, 14, 20, 22, 9, 7, 14, 20, 22, 10]
@@ -68,15 +70,23 @@ nodeSequence = [10, 2, 4, 14, 20, 22, 9, 7, 14, 20, 22, 10]
 if enableSteeringControl:
     roadmap = SDCSRoadMap(leftHandTraffic=False)
     waypointSequence = roadmap.generate_path(nodeSequence)
-    initialPose = roadmap.get_node_pose(nodeSequence[0]).squeeze()
+    # Get position of first two nodes in the path
+    pos1 = roadmap.get_node_pose(nodeSequence[0]).squeeze()[:2]
+    pos2 = roadmap.get_node_pose(nodeSequence[1]).squeeze()[:2]
+
+    # Compute heading between them
+    heading = np.arctan2(pos2[1] - pos1[1], pos2[0] - pos1[0])
+
+    # Combine position from node 0 with new heading
+    initialPose = np.array([pos1[0], pos1[1], heading])
 else:
     initialPose = [0, 0, 0]
 
 #if not IS_PHYSICAL_QCAR:
 #import Setup_Competition
-#import Setup_Competition
-#Setup_Competition.terminate()
-#Setup_Competition.setup(initialPosition=[-1.205,-0.83,0.005], initialOrientation=[0,0,-44.7])
+#import Setup_Real_Scenario
+#Setup_Real_Scenario.terminate()
+#Setup_Real_Scenario.setup(initialPosition=[-1.205,-0.83,0.005], initialOrientation=[0,0,-44.7])
 
 # Used to enable safe keyboard triggered shutdown
 global KILL_THREAD
@@ -90,24 +100,30 @@ signal.signal(signal.SIGINT, sig_handler)
 #----------------------Speed Controller-----------------------
 class SpeedController:
 
-    def __init__(self, kp=0, ki=0):
+    def __init__(self, kp=0, ki=0, kd=0):
         self.maxThrottle = 0.3
 
         self.kp = kp
         self.ki = ki
-
+        self.kd = kd
         self.ei = 0
+        self.prev_error = v_ref
+        self.prev_filtered_de_dt = 0
+        self.alpha = 0.2  # smoothing factor
 
     def update(self, v, v_ref, dt):
         
         e = v_ref - v
         self.ei += dt*e
+        if dt == 0.0:
+            dt = 0.001
+        de_dt = (e - self.prev_error)/dt
+        filtered_de_dt = (self.alpha * de_dt) + (1 - self.alpha) * self.prev_filtered_de_dt
+        self.prev_filtered_de_dt = filtered_de_dt
+        output = self.kp * e + self.ki * self.ei + self.kd * filtered_de_dt
+        self.prev_error = e
 
-        return np.clip(
-            self.kp*e + self.ki*self.ei,
-            -self.maxThrottle,
-            self.maxThrottle
-        )
+        return np.clip(output, -self.maxThrottle, self.maxThrottle)
         
         return 0
 #----------------------Steering Controller-----------------------
@@ -115,6 +131,9 @@ class SteeringController:
 
     def __init__(self, waypoints, k=1, cyclic=True):
         self.maxSteeringAngle = np.pi/6
+        self.prev_filtered_de_dt = 0
+        self.alpha_steering = 0.2 
+        self.filtered_psi_derivative = 0  # smoothed derivative of heading error
 
         self.wp = waypoints
         self.N = len(waypoints[0, :])
@@ -128,14 +147,14 @@ class SteeringController:
 
         self.bias_cooldown_counter = 0
  
-    def update(self, p, th, speed):
+    def update(self, p, th, speed, dt):
         wp_1 = self.wp[:, np.mod(self.wpi, self.N-1)]
         wp_2 = self.wp[:, np.mod(self.wpi+1, self.N-1)]
-        
+
         v = wp_2 - wp_1
         v_mag = np.linalg.norm(v)
         try:
-            v_uv = v / v_mag
+         v_uv = v / v_mag
         except ZeroDivisionError:
             return 0
 
@@ -144,46 +163,57 @@ class SteeringController:
         s = np.dot(p-wp_1, v_uv)
 
         if s >= v_mag:
-            if  self.cyclic or self.wpi < self.N-2:
+         if  self.cyclic or self.wpi < self.N-2:
                 self.wpi += 1
 
         ep = wp_1 + v_uv*s
         ct = ep - p
         dir = wrap_to_pi(np.arctan2(ct[1], ct[0]) - tangent)
 
-
-        # Calculate heading error to see if we're turning
-        psi = wrap_to_pi(tangent-th)
+        psi = wrap_to_pi(tangent-th)  # Heading error
 
         # Bias logic
         bias_strength = max(0.0, 1.0 - abs(psi) / (np.pi / 4))
-
-        # Trigger cooldown if we're turning
         if abs(psi) > 0.2:
-            self.bias_cooldown_counter = 30  # hold off bias for 20 frames
-
-        # Decrease cooldown if active
+            self.bias_cooldown_counter = 30
         if self.bias_cooldown_counter > 0:
             self.bias_cooldown_counter -= 1
-            bias_strength = 0  # suppress bias during cooldown
+            bias_strength = 0
 
         lane_bias = 0.05 * bias_strength
         ect = np.linalg.norm(ct) * np.sign(dir)
         ect += lane_bias
 
-        # Clamp very low speeds to avoid division issues
-        safe_speed = max(speed, 0.3)
-
-        # During first moments (spawn), ignore cross-track error
-        if self.wpi == 0 and np.linalg.norm(p - wp_1) < 0.5:
+        # === Add a deadzone for very small cross-track error ===
+        if abs(ect) < 0.01:  # deadzone if less than 1cm
             ect = 0
 
-        steering = wrap_to_pi(psi + np.arctan2(self.k * ect, safe_speed))
+        safe_speed = max(speed, 0.5)
+
+        # New: Derivative smoothing on psi
+        if not hasattr(self, 'psi_prev'):
+         self.psi_prev = psi  # initialize on first run
+
+        if dt == 0.0:
+            psi_derivative = 0
+        else:
+            psi_derivative = (psi - self.psi_prev) / dt
+
+        # Low-pass filter the heading error derivative
+        self.filtered_psi_derivative = (self.alpha_steering * psi_derivative) + (1 - self.alpha_steering) * self.filtered_psi_derivative
+
+        # Smoothed heading error
+        headingError = psi + (0.1 * self.filtered_psi_derivative)
+
+        self.psi_prev = psi
+
+        steering = wrap_to_pi(headingError + np.arctan2(self.k * ect, safe_speed))
 
         self.p_ref = ep
         self.th_ref = tangent
 
         return np.clip(steering, -self.maxSteeringAngle, self.maxSteeringAngle)
+
         
         return 0
 #------------------------Main Control Loop Function---------------------------------
@@ -244,6 +274,12 @@ def controlLoop():
     stopLight = True
     counter2 = 0
     counter3 = 0
+    counter4 = 0
+    counter5 = 0
+    green_frame_count_1 = 0
+    green_frame_count_2 = 0
+    green_frame_count_3 = 0
+    green_frame_count_4 = 0
     #myCam1  = Camera3D(mode='RGB&DEPTH', frameWidthRGB=imageWidth, frameHeightRGB=imageHeight)
     #------------------------------------------------------------------------------
     #endregion
@@ -251,7 +287,8 @@ def controlLoop():
     #region Controller initialization
     speedController = SpeedController(
         kp=K_p,
-        ki=K_i
+        ki=K_i,
+        kd = K_d
     )
     if enableSteeringControl:
         steeringController = SteeringController(
@@ -407,7 +444,22 @@ def controlLoop():
                             #print(np.average(color_image))
                             
                             #If the average pixel value is above 0.07, stoplight must be green
-                            if np.average(color_image) >= 0.07: 
+                            #if np.average(color_image) >= 0.07: 
+                            green_pixels = np.count_nonzero(mask)
+                            total_pixels = mask.shape[0] * mask.shape[1]
+                            green_ratio = green_pixels / total_pixels
+
+                            print(f"Green pixels: {green_pixels}, Ratio: {green_ratio:.5f}")
+
+                            # --- New threshold logic ---
+                            if green_ratio <= 0.0007 and green_pixels <= 500:
+                                green_frame_count_1 += 1
+                                print(f"Green frame count: {green_frame_count_1}")
+                            else:
+                                green_frame_count_1 = 0  # reset if not green
+
+                            # Only GO if we have 3 green frames in a row
+                            if green_frame_count_1 >= 3:
                                 carStopped3 = False
                                 print("Light is green go!")
                                 StopLight = True
@@ -449,7 +501,21 @@ def controlLoop():
                             
                             #If the average pixel value is above 0.07, stoplight must be green
                             green_pixels = np.count_nonzero(mask)
-                            if np.average(color_image) > 0.071:
+                            #if np.average(color_image) > 0.071:
+                            total_pixels = mask.shape[0] * mask.shape[1]
+                            green_ratio = green_pixels / total_pixels
+
+                            print(f"Green pixels: {green_pixels}, Ratio: {green_ratio:.5f}")
+
+                            # --- New threshold logic ---
+                            if green_ratio >= 0.0001 and green_pixels >= 50:
+                                green_frame_count_2 += 1
+                                print(f"Green frame count: {green_frame_count_2}")
+                            else:
+                                green_frame_count_2 = 0  # reset if not green
+
+                            # Only GO if we have 3 green frames in a row
+                            if green_frame_count_2 >= 3:
                                 carStopped4 = False
                                 print("Light is green go!")
                                 StopLight2 = True
@@ -464,14 +530,14 @@ def controlLoop():
                     #False as long as car has first entered box and light is assumed to be red                    
                     if (StopLight3 == False):
                         #count every second (counter2 starts from 0)
-                        second = counter2 % 60
+                        second = counter4 % 60
                         #if it has been one second, isSecond is true
                         if second == 0:
                             isSecond = True
                         else:
                             isSecond = False
                         #increment the counter every loop
-                        counter2 = counter2 + 1
+                        counter4 = counter4 + 1
                         #if it has been one second, take a picture
                         if isSecond == True:
                             image = cameraInterfacingLab.d435Color.imageBufferRGB
@@ -487,10 +553,19 @@ def controlLoop():
                             #only show the pixels that contain the stoplight color
                             color_image = cv2.bitwise_and(image, image, mask=mask)
 
-                            #print(np.average(color_image))
-                            
+                            print(f"Green pixels: {green_pixels}, Ratio: {green_ratio:.5f}")
+
+                            # --- New threshold logic ---
+                            if green_ratio >= 0.0001 and green_pixels >= 50:
+                                green_frame_count_3 += 1
+                                print(f"Green frame count: {green_frame_count_3}")
+                            else:
+                                green_frame_count_3 = 0  # reset if not green
+
+                            # Only GO if we have 3 green frames in a row
+                            if green_frame_count_3 >= 3:
                             #If the average pixel value is above 0.07, stoplight must be green
-                            if np.average(color_image) >= 0.06: 
+                            #if np.average(color_image) >= 0.06: 
                                 carStopped5 = False
                                 print("Light is green go!")
                                 StopLight = True
@@ -505,20 +580,20 @@ def controlLoop():
                     #False as long as car has first entered box and light is assumed to be red                    
                     if (StopLight4 == False):
                         #count every second (counter2 starts from 0)
-                        second = counter2 % 60
+                        second = counter5 % 60
                         #if it has been one second, isSecond is true
                         if second == 0:
                             isSecond = True
                         else:
                             isSecond = False
                         #increment the counter every loop
-                        counter2 = counter2 + 1
+                        counter5 = counter5 + 1
                         #if it has been one second, take a picture
                         if isSecond == True:
                             image = cameraInterfacingLab.d435Color.imageBufferRGB
                             #--------------------Image Processing------------------------
                             hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-                            carStopped6 = True
+                            carStopped5 = True
                             # lower range of green stoplight color in HSV
                             hsv_green_lower = (40, 50, 100)
                             # upper range of green stoplight color in HSV
@@ -528,10 +603,19 @@ def controlLoop():
                             #only show the pixels that contain the stoplight color
                             color_image = cv2.bitwise_and(image, image, mask=mask)
 
-                            #print(np.average(color_image))
-                            
+                            print(f"Green pixels: {green_pixels}, Ratio: {green_ratio:.5f}")
+
+                            # --- New threshold logic ---
+                            if green_ratio >= 0.0001 and green_pixels >= 50:
+                                green_frame_count_4 += 1
+                                print(f"Green frame count: {green_frame_count_3}")
+                            else:
+                                green_frame_count_4 = 0  # reset if not green
+
+                            # Only GO if we have 3 green frames in a row
+                            if green_frame_count_4 >= 3:
                             #If the average pixel value is above 0.07, stoplight must be green
-                            if np.average(color_image) >= 0.06: 
+                            #if np.average(color_image) >= 0.06: 
                                 carStopped6 = False
                                 print("Light is green go!")
                                 StopLight = True
@@ -541,6 +625,16 @@ def controlLoop():
                                 print("Light is red stop!")
                                 u = 0
                                 delta = 0
+                    else:
+                        # default controller logic
+                        if np.linalg.norm(p - np.array([-1.6, -0.4])) < 0.35 and not carStopped6:
+                            print("Final destination reached. Stopping for 3 seconds...")
+                            u = 0
+                            delta = 0
+                            qcar.write(u, delta)
+                            time.sleep(3)
+                            print("Experiment complete.")
+                            break
                 #if car is not in region for any stoplight or stopsign
                 #run default controller and reset parameters
                 else:
@@ -557,12 +651,14 @@ def controlLoop():
                     carStopped6 = False
                     counter2 = 0
                     counter3 = 0
+                    counter4 = 0
+                    counter5 = 0
 
                 #endregion
 
                 #region : Steering controller update
                 if enableSteeringControl:
-                    delta = steeringController.update(p, th, v)
+                    delta = steeringController.update(p, th, v, dt)
                 else:
                     delta = 0
                 #endregion
