@@ -10,7 +10,7 @@ Step 3: Download the file called "Requirements.txt" & run this pip install (warn
 -Change the "bland" to whatever your user name is
 pip install -r "C:\Users\bland\Downloads\requirements.txt"
 
-Step 3: Work on the code
+Step 4: Work on the code
   - I am modeling our neural network off of this teams: https://github.com/SoumyajitC-24/Quanser-2024-ACC-Competition/blob/main/code/main.py
   -Here are the libraries that need to be imported
 
