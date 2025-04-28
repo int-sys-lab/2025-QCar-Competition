@@ -404,7 +404,6 @@ def controlLoop():
                     continue  # Skip the rest of the loop this frame
                 
                 if abs(p[0] - (-1.4)) < 0.2 and abs(p[1] - (-0.3)) < 0.3:
-                #if np.linalg.norm(p - np.array([-1.6, -0.3])) < 0.35 and not carStopped6:
                     print("Final destination reached.")
                     u = 0
                     delta = 0
