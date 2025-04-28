@@ -1,9 +1,17 @@
 Step 1: Download the pretrained Tensorflow model from the following Google Drive link and keep it in the " code " folder
 https://drive.google.com/file/d/12Y2dmPriDlKzzIugDJJ05tABp2itTuN0/view?usp=sharing
 
-Step 2: Work on the code
-  - I am modeling our neural network off of this teams: https://github.com/SoumyajitC-24/Quanser-2024-ACC-Competition/blob/main/code/main.py
+Step 2: Download and use Python 3-11.8 (will not work with newer models): 
+- to download go to: https://www.python.org/ftp/python/3.11.8/
+- select python-3.11.8-amd64.exe if you are using Windows and are on 64bit
+- download and install to path
 
+Step 3: Download the file called "Requirements.txt" & run this pip install (warning it's long)
+-Change the "bland" to whatever your user name is
+pip install -r "C:\Users\bland\Downloads\requirements.txt"
+
+Step 3: Work on the code
+  - I am modeling our neural network off of this teams: https://github.com/SoumyajitC-24/Quanser-2024-ACC-Competition/blob/main/code/main.py
   -Here are the libraries that need to be imported
 
 Notes: 
