@@ -17,6 +17,8 @@ import time
 import cv2
 import pyqtgraph as pg
 
+from ultralytics import YOLO
+
 from pal.products.qcar import QCar, QCarGPS, QCarCameras, QCarRealSense, IS_PHYSICAL_QCAR
 from pal.utilities.scope import MultiScope
 from pal.utilities.math import wrap_to_pi
@@ -39,7 +41,7 @@ controllerUpdateRate = 150
 # - K_p: proportional gain for speed controller
 # - K_i: integral gain for speed controller
 # - K_d: derivative gain for speed controller
-v_ref = 0.75
+v_ref = 1
 K_p = 1
 K_i = 0
 K_d = 0.01
@@ -225,6 +227,9 @@ def controlLoop():
     # used to limit data sampling to 10hz
     countMax = controllerUpdateRate / 10
     count = 0
+
+    model = YOLO('yolov8n.pt')
+    
     #-------------------------Camera Initialization--------------------------
     cameraInterfacingLab = ImageInterpretation(
         imageSize=[[820,410], [64,48]],
@@ -249,6 +254,7 @@ def controlLoop():
     ])
     cameraInterfacingLab.d435CamIntrinsics = cameraMatrix
     cameraInterfacingLab.d435DistParam = distortionCoefficients
+
     #----------------------"Global" Variables-----------------------
     timerStart = 0
     timerStart2 = 0
@@ -436,7 +442,7 @@ def controlLoop():
                             u = speedController.update(v, current_v_ref * speed_multiplier, dt)
                 #Stop Light 1---------------------------------------------------------
                 elif p[0] < -0.6 and p[0] > -1. and p[1] < 1 and p[1] > 0.7: 
-                    #False as long as car has first entered box and light is assumed to be red                    
+                #False as long as car has first entered box and light is assumed to be red  
                     if (StopLight == False):
                         #count every second (counter2 starts from 0)
                         second = counter2 % 60
@@ -446,7 +452,7 @@ def controlLoop():
                         else:
                             isSecond = False
                         #increment the counter every loop
-                        counter2 = counter2 + 1
+                        counter2 = counter + 1
                         #if it has been one second, take a picture
                         if isSecond == True:
                             image = cameraInterfacingLab.d435Color.imageBufferRGB
@@ -457,15 +463,11 @@ def controlLoop():
                             hsv_green_lower = (40, 50, 100)
                             # upper range of green stoplight color in HSV
                             hsv_green_upper = (80, 255, 255)
-                            #mask with the range of greens for stoplight color
+                            # mask with the range of greens for stoplight color
                             mask = cv2.inRange(hsv_img, hsv_green_lower, hsv_green_upper)
-                            #only show the pixels that contain the stoplight color
+                            # only show the pixels that contain the stoplight color
                             color_image = cv2.bitwise_and(image, image, mask=mask)
 
-                            #print(np.average(color_image))
-                            
-                            #If the average pixel value is above 0.07, stoplight must be green
-                            #if np.average(color_image) >= 0.07: 
                             green_pixels = np.count_nonzero(mask)
                             total_pixels = mask.shape[0] * mask.shape[1]
                             green_ratio = green_pixels / total_pixels
@@ -473,15 +475,15 @@ def controlLoop():
                             print(f"Green pixels: {green_pixels}, Ratio: {green_ratio:.5f}")
 
                             # --- New threshold logic ---
-                            if green_ratio >= 0.0001 and green_pixels >= 100:
+                            if green_ratio >= 0.0001 and green_pixels >= 50:
                                 green_frame_count_1 += 1
-                                print(f"Green frame count: {green_frame_count_1}")
+                                print(f"Green frame count: {green_frame_count_2}")
                             else:
                                 green_frame_count_1 = 0  # reset if not green
 
                             # Only GO if we have 3 green frames in a row
                             if green_frame_count_1 >= 3:
-                                carStopped3 = False
+                                carStopped4 = False
                                 print("Light is green go!")
                                 StopLight = True
                                 u = speedController.update(v, current_v_ref * speed_multiplier, dt)
@@ -518,11 +520,7 @@ def controlLoop():
                             # only show the pixels that contain the stoplight color
                             color_image = cv2.bitwise_and(image, image, mask=mask)
 
-                            #print(np.average(color_image))
-                            
-                            #If the average pixel value is above 0.07, stoplight must be green
                             green_pixels = np.count_nonzero(mask)
-                            #if np.average(color_image) > 0.071:
                             total_pixels = mask.shape[0] * mask.shape[1]
                             green_ratio = green_pixels / total_pixels
 
@@ -585,8 +583,6 @@ def controlLoop():
 
                             # Only GO if we have 3 green frames in a row
                             if green_frame_count_3 >= 3:
-                            #If the average pixel value is above 0.07, stoplight must be green
-                            #if np.average(color_image) >= 0.06: 
                                 carStopped5 = False
                                 print("Light is green go!")
                                 StopLight = True
@@ -635,8 +631,6 @@ def controlLoop():
 
                             # Only GO if we have 3 green frames in a row
                             if green_frame_count_4 >= 3:
-                            #If the average pixel value is above 0.07, stoplight must be green
-                            #if np.average(color_image) >= 0.06: 
                                 carStopped6 = False
                                 print("Light is green go!")
                                 StopLight = True
