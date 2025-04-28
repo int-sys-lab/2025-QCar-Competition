@@ -402,6 +402,15 @@ def controlLoop():
 
                     qcar.write(u, delta)
                     continue  # Skip the rest of the loop this frame
+                
+                if abs(p[0] - (-1.4)) < 0.2 and abs(p[1] - (-0.3)) < 0.3:
+                #if np.linalg.norm(p - np.array([-1.6, -0.3])) < 0.35 and not carStopped6:
+                    print("Final destination reached.")
+                    u = 0
+                    delta = 0
+                    qcar.write(u, delta)
+                    time.sleep(3)
+                    break
                 #Stop Sign 1----------------------------------------------------------
                 if p[0] < 3.5 and p[0] > 2.11 and p[1] < 0.15 and p[1] > -.2:
                     #When car first enters box, stop car and start timer
@@ -638,16 +647,7 @@ def controlLoop():
                                 print("Light is red stop!")
                                 u = 0
                                 delta = 0
-                    else:
-                        # default controller logic
-                        if np.linalg.norm(p - np.array([-1.6, -0.4])) < 0.35 and not carStopped6:
-                            print("Final destination reached. Stopping for 3 seconds...")
-                            u = 0
-                            delta = 0
-                            qcar.write(u, delta)
-                            time.sleep(3)
-                            print("Experiment complete.")
-                            break
+
                 #if car is not in region for any stoplight or stopsign
                 #run default controller and reset parameters
                 else:
