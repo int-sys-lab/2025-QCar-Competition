@@ -87,6 +87,114 @@ else:
 #Setup_Real_Scenario.terminate()
 #Setup_Real_Scenario.setup(initialPosition=[-1.205,-0.83,0.005], initialOrientation=[0,0,-44.7])
 
+
+#----------------------Traffic Light Detection Class------------------------
+class TrafficLightDetector:
+    def __init__(self, camera_interface):
+        self.camera = camera_interface
+        self.display_window = "Traffic Light Detection"
+        self.detection_window = "Detection View"
+        
+        # HSV ranges
+        self.green_lower = np.array([40, 80, 80])
+        self.green_upper = np.array([80, 255, 255])
+        self.red_lower1 = np.array([0, 100, 100])
+        self.red_upper1 = np.array([10, 255, 255])
+        self.red_lower2 = np.array([160, 100, 100])
+        self.red_upper2 = np.array([180, 255, 255])
+        
+        # Thresholds
+        self.green_threshold = 50
+        self.red_threshold = 50
+        
+        # ROI parameters
+        self.roi_height = 0.18
+        self.roi_start = 0.2
+        self.roi_width = 0.4
+        self.min_brightness = 50
+
+        self.last_green_pixels = 0
+        self.last_red_pixels = 0
+        self.last_has_green = False
+        self.last_has_red = False
+
+    def detect_light(self, frame):
+        try:
+            # Convert to HSV and process
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            h, s, v = cv2.split(hsv)
+            v = cv2.equalizeHist(v)
+            hsv = cv2.merge([h, s, v])
+            
+            # Create ROI
+            height, width = frame.shape[:2]
+            roi_top = int(height * self.roi_start)
+            roi_bottom = int(height * (self.roi_start + self.roi_height))
+            roi_left = int(width * (1 - self.roi_width)/2)
+            roi_right = width - roi_left
+            
+            roi = frame[roi_top:roi_bottom, roi_left:roi_right]
+            hsv_roi = hsv[roi_top:roi_bottom, roi_left:roi_right]
+            
+            # Create masks
+            kernel = np.ones((3,3), np.uint8)
+            green_mask = cv2.inRange(hsv_roi, self.green_lower, self.green_upper)
+            green_mask = cv2.morphologyEx(green_mask, cv2.MORPH_OPEN, kernel)
+            green_mask = cv2.morphologyEx(green_mask, cv2.MORPH_CLOSE, kernel)
+            
+            red_mask1 = cv2.inRange(hsv_roi, self.red_lower1, self.red_upper1)
+            red_mask2 = cv2.inRange(hsv_roi, self.red_lower2, self.red_upper2)
+            red_mask = cv2.bitwise_or(red_mask1, red_mask2)
+            red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN, kernel)
+            red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_CLOSE, kernel)
+            
+            # Count pixels
+            green_pixels = cv2.countNonZero(green_mask)
+            red_pixels = cv2.countNonZero(red_mask)
+            avg_brightness = np.mean(v[roi_top:roi_bottom, roi_left:roi_right])
+            
+            if avg_brightness < self.min_brightness:
+                green_pixels = 0
+                red_pixels = 0
+            
+            # Create visualization
+            vis_frame = frame.copy()
+            detection_view = np.zeros_like(roi)
+            
+            cv2.rectangle(vis_frame, (roi_left, roi_top), 
+                         (roi_right, roi_bottom), (255, 0, 255), 2)
+            detection_view[green_mask > 0] = (0, 255, 0)
+            detection_view[red_mask > 0] = (0, 0, 255)
+            
+            # Store the detection results
+            self.last_green_pixels = green_pixels
+            self.last_red_pixels = red_pixels
+            self.last_has_green = green_pixels > 0
+            self.last_has_red = red_pixels > 0
+            
+            # Still return only the two expected values
+            return vis_frame, detection_view
+            
+        except Exception as e:
+            # Reset on error
+            self.last_green_pixels = 0
+            self.last_red_pixels = 0
+            self.last_has_green = False
+            self.last_has_red = False
+            return frame.copy(), np.zeros_like(frame)
+
+
+    def show_detection(self, vis_frame, detection_view):
+        try:
+            if vis_frame is not None and detection_view is not None:
+                vis_frame = cv2.resize(vis_frame, (640, 480))
+                detection_view = cv2.resize(detection_view, (320, 240))
+                cv2.imshow(self.display_window, vis_frame)
+                cv2.imshow(self.detection_window, detection_view)
+                cv2.waitKey(1)
+        except Exception as e:
+            print(f"Display error: {str(e)}")
+
 # Used to enable safe keyboard triggered shutdown
 global KILL_THREAD
 KILL_THREAD = False
@@ -389,6 +497,11 @@ def controlLoop():
     lane_keeper = LaneKeepingThread(cameraInterfacingLab)
     lane_keeper.start()
 
+    # Initialize traffic light detector
+    traffic_detector = TrafficLightDetector(cameraInterfacingLab)
+    cv2.namedWindow(traffic_detector.display_window, cv2.WINDOW_NORMAL)
+    cv2.namedWindow(traffic_detector.detection_window, cv2.WINDOW_NORMAL)
+
     #----------------------"Global" Variables-----------------------
     timerStart = 0
     timerStart2 = 0
@@ -582,58 +695,59 @@ def controlLoop():
                         timerEnd = time.time()
                         if (timerEnd - timerStart2) >= 3:
                             u = speedController.update(v, current_v_ref * speed_multiplier, dt)
-                #Stop Light 1---------------------------------------------------------
-                elif p[0] < -0.6 and p[0] > -1. and p[1] < 1 and p[1] > 0.7: 
-                #False as long as car has first entered box and light is assumed to be red  
-                    if (StopLight == False):
-                        #count every second (counter2 starts from 0)
+                # Stop Light 1---------------------------------------------------------
+                elif p[0] < -0.6 and p[0] > -1. and p[1] < 1 and p[1] > 0.7:
+                    if not StopLight:
                         second = counter2 % 60
-                        #if it has been one second, isSecond is true
-                        if second == 0:
-                            isSecond = True
-                        else:
-                            isSecond = False
-                        #increment the counter every loop
-                        counter2 = counter + 1
-                        #if it has been one second, take a picture
-                        if isSecond == True:
+                        isSecond = (second == 0)
+                        counter2 += 1
+
+                        if isSecond:
                             image = cameraInterfacingLab.d435Color.imageBufferRGB
-                            #--------------------Image Processing------------------------
-                            hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-                            carStopped3 = True
-                            # lower range of green stoplight color in HSV
-                            hsv_green_lower = (40, 50, 100)
-                            # upper range of green stoplight color in HSV
-                            hsv_green_upper = (80, 255, 255)
-                            # mask with the range of greens for stoplight color
-                            mask = cv2.inRange(hsv_img, hsv_green_lower, hsv_green_upper)
-                            # only show the pixels that contain the stoplight color
-                            color_image = cv2.bitwise_and(image, image, mask=mask)
 
-                            green_pixels = np.count_nonzero(mask)
-                            total_pixels = mask.shape[0] * mask.shape[1]
-                            green_ratio = green_pixels / total_pixels
+                            if traffic_detector is not None:
+                                vis_frame, detection_view = traffic_detector.detect_light(image)
+                                traffic_detector.show_detection(vis_frame, detection_view)
 
-                            print(f"Green pixels: {green_pixels}, Ratio: {green_ratio:.5f}")
+                                if traffic_detector.last_has_green:
+                                    print("Green light detected - stopping briefly before proceeding!")
+                                    green_start_time = time.time()
+                                    while time.time() - green_start_time < 0.0:
+                                        u = 0
+                                        delta = 0
+                                        qcar.write(u, delta)
+                                        time.sleep(0.05)
 
-                            # --- New threshold logic ---
-                            if green_ratio >= 0.0001 and green_pixels >= 50:
-                                green_frame_count_1 += 1
-                                print(f"Green frame count: {green_frame_count_2}")
-                            else:
-                                green_frame_count_1 = 0  # reset if not green
+                                    # Proceed after delay
+                                    u = speedController.update(v, current_v_ref * speed_multiplier, dt)
+                                    print("Resuming navigation...")
+                                    StopLight = True  # Prevent re-entering this logic
 
-                            # Only GO if we have 3 green frames in a row
-                            if green_frame_count_1 >= 3:
-                                carStopped4 = False
-                                print("Light is green go!")
-                                StopLight = True
-                                u = speedController.update(v, current_v_ref * speed_multiplier, dt)
-                            #otherwise, stop at red light
-                            else:
-                                print("Light is red stop!")
-                                u = 0
-                                delta = 0
+                                    # Clean up detection
+                                    try:
+                                        cv2.destroyWindow(traffic_detector.display_window)
+                                        cv2.destroyWindow(traffic_detector.detection_window)
+                                    except:
+                                        pass
+                                    traffic_detector = None
+
+                                elif traffic_detector.last_has_red:
+                                    print("Red light detected - stopping!")
+                                    u = 0
+                                    delta = 0
+
+                                else:
+                                    print("No light detected")
+                                    if green_frame_count_1 >= 3:
+                                        print("Green light fallback: proceeding")
+                                        StopLight = True
+                                        u = speedController.update(v, current_v_ref * speed_multiplier, dt)
+                                    else:
+                                        print("Red light fallback: stopping")
+                                        u = 0
+                                        delta = 0
+
+
                 #Stop Light 2--------------------------------------------------
                 elif p[0] < 1.3 and p[0] > 0.9 and p[1] < 1.2  and p[1] > 0.95:
                     #False as long as car has first entered box and light is assumed to be red  
